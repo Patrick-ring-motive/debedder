@@ -338,7 +338,7 @@
     const STOP = new Set("the a an of on at in to for is are and or but with from by as that this it its into over than then more before after".split(" "));
 
     /* ---------- toy embedder: 26-d letter-frequency histogram ---------- */
-    function toyEmbed(text) {
+    globalThis.toyEmbed = function toyEmbed(text) {
       const v = new Array(26).fill(0);
       const t = text.toLowerCase();
       let n = 0;
@@ -355,11 +355,11 @@
     }
 
     /* ---------- plain vocab lookup (no hashing) ---------- */
-    function tokenize(s) {
+    globalThis.tokenize = function tokenize(s) {
       return s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
     }
 
-    function keywordsOf(sentence, topN = 4) {
+    globalThis.keywordOf = function keywordsOf(sentence, topN = 4) {
       const toks = tokenize(sentence).filter(w => !STOP.has(w) && w.length > 2);
       const freq = {};
       toks.forEach(w => freq[w] = (freq[w] || 0) + 1);
@@ -377,7 +377,7 @@
     const wordToIdx = {};
     vocab.forEach((w, i) => wordToIdx[w] = i);
 
-    function hashWord(w) {
+    globalThis.hashWord = function hashWord(w) {
       return wordToIdx.hasOwnProperty(w) ? wordToIdx[w] : -1;
     }
 
@@ -402,7 +402,7 @@
     /* ---------- linear layer: W [NB x 26], b [NB] ---------- */
     let W, B, epoch, lossHistory;
 
-    function resetModel() {
+    globalThis.resetModel = function resetModel() {
       W = Array.from({
         length: NB
       }, () => Array.from({
@@ -416,11 +416,11 @@
       drawLoss();
     }
 
-    function sigmoid(z) {
+    globalThis.sigmoid = function sigmoid(z) {
       return 1 / (1 + Math.exp(-z));
     }
 
-    function forward(x) {
+    globalThis.forward = function forward(x) {
       const out = new Array(NB);
       for (let j = 0; j < NB; j++) {
         let z = B[j];
@@ -430,7 +430,7 @@
       return out;
     }
 
-    function trainStep(nEpochs) {
+    globalThis.trainStep = function trainStep(nEpochs) {
       const lr = 0.6;
       for (let e = 0; e < nEpochs; e++) {
         let totalLoss = 0;
@@ -456,7 +456,7 @@
       drawLoss();
     }
 
-    function drawLoss() {
+    globalThis.drawLoss = function drawLoss() {
       const cv = document.getElementById('lossCanvas');
       const ctx = cv.getContext('2d');
       cv.width = cv.clientWidth;
@@ -486,7 +486,7 @@
       }
     });
 
-    function generateFrom(keywords) {
+    globalThis.generateFrom = function generateFrom(keywords) {
       // greedy walk from <s>, biased toward hitting remaining target keywords
       const remaining = new Set(keywords);
       let cur = '<s>',
@@ -513,7 +513,7 @@
     }
 
     /* ---------- UI wiring ---------- */
-    function showEmbed() {
+    globalThis.showEmbed = function showEmbed() {
       const t = document.getElementById('embedInput').value;
       const v = toyEmbed(t);
       const host = document.getElementById('embedHist');
@@ -528,7 +528,7 @@
       document.getElementById('embedStat').textContent = '26-d vector, a-z frequency (this fakes what a real embedder would output at 1536-d)';
     }
 
-    function showHash() {
+    globalThis.showHash = function showHash() {
       const w = document.getElementById('hashWord').value.trim().toLowerCase();
       const b = hashWord(w);
       if (b === -1) {
@@ -542,7 +542,7 @@
       renderBucketGrid(b);
     }
 
-    function renderBucketGrid(highlight) {
+    globalThis.renderBucketGrid = function renderBucketGrid(highlight) {
       const host = document.getElementById('bucketGrid');
       host.innerHTML = '';
       for (let b = 0; b < NB; b++) {
@@ -554,7 +554,7 @@
       }
     }
 
-    function runDebedder() {
+    globalThis.runDebedder = function runDebedder() {
       const t = document.getElementById('runInput').value;
       const x = toyEmbed(t);
       const pred = forward(x);
