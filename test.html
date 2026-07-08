@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>debedder :: toy</title>
+  <style>
+    :root {
+      --bg: #0b0e0f;
+      --panel: #12171a;
+      --line: #24313a;
+      --ink: #c9d6d9;
+      --dim: #5f7a82;
+      --accent: #5fd0c0;
+      --warn: #e0a458;
+      --grid: #182226;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      margin: 0;
+      padding: 24px;
+      font-family: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    h1 {
+      font-size: 15px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 4px;
+      font-weight: 600;
+    }
+
+    .sub {
+      color: var(--dim);
+      margin-bottom: 20px;
+      font-size: 12px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      max-width: 1180px;
+    }
+
+    @media(max-width:900px) {
+      .layout {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      padding: 16px;
+      position: relative;
+    }
+
+    .panel::before {
+      content: attr(data-tag);
+      position: absolute;
+      top: -9px;
+      left: 12px;
+      background: var(--bg);
+      padding: 0 6px;
+      font-size: 10px;
+      letter-spacing: .14em;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    .full {
+      grid-column: 1/-1;
+    }
+
+    textarea,
+    input[type=text] {
+      width: 100%;
+      background: #0d1112;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 8px;
+      border-radius: 2px;
+      resize: vertical;
+    }
+
+    button {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 7px 14px;
+      border-radius: 2px;
+      cursor: pointer;
+      margin-top: 8px;
+      margin-right: 6px;
+    }
+
+    button:hover {
+      background: rgba(95, 208, 192, .1)
+    }
+
+    button:disabled {
+      opacity: .35;
+      cursor: default
+    }
+
+    button.warn {
+      border-color: var(--warn);
+      color: var(--warn)
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: var(--dim);
+      margin: 10px 0 4px;
+      text-transform: uppercase;
+      letter-spacing: .06em
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+
+    .stat {
+      font-size: 11px;
+      color: var(--dim)
+    }
+
+    .stat b {
+      color: var(--accent);
+      font-weight: 600
+    }
+
+    .hist {
+      display: flex;
+      gap: 1px;
+      height: 36px;
+      align-items: flex-end;
+      margin-top: 8px;
+    }
+
+    .bar {
+      background: var(--accent);
+      flex: 1;
+      min-width: 2px;
+      opacity: .55
+    }
+
+    .bucket-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 3px;
+      margin-top: 10px;
+      font-size: 10px;
+    }
+
+    .bucket {
+      background: #0d1112;
+      border: 1px solid var(--line);
+      padding: 4px;
+      border-radius: 2px;
+      min-height: 44px;
+      overflow: hidden;
+      color: var(--dim);
+    }
+
+    .bucket b {
+      color: var(--ink);
+      display: block;
+      font-size: 10px
+    }
+
+    .bucket.hit {
+      border-color: var(--accent);
+      background: rgba(95, 208, 192, .08)
+    }
+
+    .kw {
+      display: inline-block;
+      background: #0d1112;
+      border: 1px solid var(--line);
+      color: var(--accent);
+      padding: 2px 7px;
+      margin: 2px 4px 2px 0;
+      border-radius: 2px;
+      font-size: 11px;
+    }
+
+    .kw span {
+      color: var(--dim);
+      font-size: 10px
+    }
+
+    .out {
+      background: #0d1112;
+      border: 1px solid var(--line);
+      padding: 12px;
+      margin-top: 8px;
+      border-radius: 2px;
+      min-height: 20px;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .loss-canvas {
+      width: 100%;
+      height: 70px;
+      margin-top: 8px;
+      display: block
+    }
+
+    .flow {
+      color: var(--dim);
+      font-size: 11px;
+      margin: 10px 0;
+      letter-spacing: .02em
+    }
+
+    .flow b {
+      color: var(--accent)
+    }
+
+    .note {
+      color: var(--dim);
+      font-size: 11px;
+      margin-top: 10px;
+      border-top: 1px dashed var(--line);
+      padding-top: 8px
+    }
+
+    ::selection {
+      background: rgba(95, 208, 192, .25)
+    }
+
+  </style>
+</head>
+
+<body>
+
+  <h1>debedder :: toy</h1>
+  <div class="sub">local no-vectordb semantic decoder — plain fixed-vocab linear layer + bigram constrained decode. all math client-side, no API calls.</div>
+
+  <div class="layout">
+
+    <div class="panel" data-tag="01 · toy embedder">
+      <div class="flow">text → codepoint histogram (26-d) → this stands in for a real embedder (bge/e5/etc). same idea as edgeEmbed, just fewer dims for visibility.</div>
+      <textarea id="embedInput" rows="2">the cat sleeps on the warm windowsill</textarea>
+      <button onclick="showEmbed()">embed it</button>
+      <div class="hist" id="embedHist"></div>
+      <div class="stat" id="embedStat"></div>
+    </div>
+
+    <div class="panel" data-tag="02 · vocab lookup">
+      <div class="flow">word → dictionary.indexOf(word) → slot index. real table, built once from corpus. unknown words have no slot at all — that's the tradeoff vs hashing.</div>
+      <input type="text" id="hashWord" value="cat" placeholder="type a word">
+      <button onclick="showHash()">look it up</button>
+      <div class="out" id="hashOut" style="min-height:16px"></div>
+      <div class="bucket-grid" id="bucketGrid"></div>
+    </div>
+
+    <div class="panel full" data-tag="03 · train the linear layer">
+      <div class="flow">
+        corpus (24 toy sentences) → tf-ish top keywords per sentence → vocab index → multi-label targets.<br>
+        train <b>W</b> [vocab-size × 26 dims] via logistic regression / SGD, live in this tab. no embedder in the training loop — that's the whole simplification.
+      </div>
+      <div class="row">
+        <button onclick="trainStep(50)">train +50 epochs</button>
+        <button onclick="trainStep(500)">train +500 epochs</button>
+        <button class="warn" onclick="resetModel()">reset weights</button>
+        <span class="stat">epoch: <b id="epochCount">0</b> &nbsp; loss: <b id="lossVal">–</b></span>
+      </div>
+      <canvas class="loss-canvas" id="lossCanvas"></canvas>
+    </div>
+
+    <div class="panel full" data-tag="04 · run the debedder">
+      <div class="flow">type any sentence (even unseen ones) → toy-embed → W → top-k vocab slots → candidate words → bigram model strings them into text, biased toward hitting the predicted keywords.</div>
+      <textarea id="runInput" rows="2">a small vessel drifts through deep space</textarea>
+      <button onclick="runDebedder()">decode</button>
+      <label>predicted keywords (bucket → score)</label>
+      <div id="kwOut"></div>
+      <label>bigram-generated caption</label>
+      <div class="out" id="genOut">–</div>
+      <div class="note">try sentences totally outside the toy corpus — words not in the fixed vocab table have no slot at all (see panel 02), so out-of-vocab meaning gets dropped entirely rather than smeared into a nearby bucket. the bigram model still falls back gracefully on whatever keywords do land. this is the tradeoff for dropping the hash trick: cleaner slots, harder ceiling on coverage.</div>
+    </div>
+
+  </div>
+
+  <script>
+    (async()=>{
+    /* ---------- toy corpus: 4 loose topics, kept tiny on purpose ---------- */
+    const CORPUS = [
+      "the cat sleeps on the warm windowsill",
+      "a black cat hunts mice at night",
+      "the kitten chases a ball of yarn",
+      "cats groom themselves for hours",
+      "the dog barks at the mailman",
+      "simmer the onions in butter until soft",
+      "whisk the eggs and add a pinch of salt",
+      "bake the bread at high heat for an hour",
+      "chop the garlic finely before frying",
+      "the soup needs more pepper and thyme",
+      "boil the pasta then drain the water",
+      "a rocket launches from the desert pad",
+      "the astronaut floats outside the station",
+      "stars burn for billions of years",
+      "the probe drifts past the outer planets",
+      "a small vessel orbits the distant moon",
+      "mission control tracks the capsule descent",
+      "the function returns a promise that resolves",
+      "the worker streams the response in chunks",
+      "the array is sorted before the merge step",
+      "the server caches the embedding vector",
+      "the compiler throws an error on the missing token",
+      "the database indexes the table by primary key",
+      "the model trains on the batch of vectors"
+    ];
+    const STOP = new Set("the a an of on at in to for is are and or but with from by as that this it its into over than then more before after".split(" "));
+
+    /* ---------- toy embedder: 26-d letter-frequency histogram ---------- */
+    function toyEmbed(text) {
+      const v = new Array(26).fill(0);
+      const t = text.toLowerCase();
+      let n = 0;
+      for (const ch of t) {
+        const c = ch.charCodeAt(0) - 97;
+        if (c >= 0 && c < 26) {
+          v[c]++;
+          n++;
+        }
+      }
+      if (n > 0)
+        for (let i = 0; i < 26; i++) v[i] /= n;
+      return v;
+    }
+
+    /* ---------- plain vocab lookup (no hashing) ---------- */
+    function tokenize(s) {
+      return s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
+    }
+
+    function keywordsOf(sentence, topN = 4) {
+      const toks = tokenize(sentence).filter(w => !STOP.has(w) && w.length > 2);
+      const freq = {};
+      toks.forEach(w => freq[w] = (freq[w] || 0) + 1);
+      return Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, topN);
+    }
+
+    // build the vocab table once, up front, from every keyword seen in the corpus.
+    // this table is the entire "database" now - ships as a flat array, size grows
+    // with real vocab (no fixed bucket count, no collisions, but also no way to
+    // represent a word that isn't in this list at train time).
+    const vocabSet = new Set();
+    CORPUS.forEach(s => keywordsOf(s, 6).forEach(w => vocabSet.add(w)));
+    const vocab = Array.from(vocabSet).sort();
+    const NB = vocab.length; // output width = vocab size, exactly
+    const wordToIdx = {};
+    vocab.forEach((w, i) => wordToIdx[w] = i);
+
+    function hashWord(w) {
+      return wordToIdx.hasOwnProperty(w) ? wordToIdx[w] : -1;
+    }
+
+    /* bucket -> word is now 1:1, trivial, no collision bookkeeping needed */
+    const bucketWords = {};
+    vocab.forEach((w, i) => {
+      bucketWords[i] = {
+        [w]: 1
+      };
+    });
+
+    /* ---------- training data: (embedding, multi-hot label over 32 buckets) ---------- */
+    const trainSet = CORPUS.map(s => {
+      const label = new Array(NB).fill(0);
+      keywordsOf(s, 6).forEach(w => label[hashWord(w)] = 1);
+      return {
+        x: toyEmbed(s),
+        y: label
+      };
+    });
+
+    /* ---------- linear layer: W [NB x 26], b [NB] ---------- */
+    let W, B, epoch, lossHistory;
+
+    function resetModel() {
+      W = Array.from({
+        length: NB
+      }, () => Array.from({
+        length: 26
+      }, () => (Math.random() - 0.5) * 0.2));
+      B = new Array(NB).fill(0);
+      epoch = 0;
+      lossHistory = [];
+      document.getElementById('epochCount').textContent = '0';
+      document.getElementById('lossVal').textContent = '–';
+      drawLoss();
+    }
+
+    function sigmoid(z) {
+      return 1 / (1 + Math.exp(-z));
+    }
+
+    function forward(x) {
+      const out = new Array(NB);
+      for (let j = 0; j < NB; j++) {
+        let z = B[j];
+        for (let i = 0; i < 26; i++) z += W[j][i] * x[i];
+        out[j] = sigmoid(z);
+      }
+      return out;
+    }
+
+    function trainStep(nEpochs) {
+      const lr = 0.6;
+      for (let e = 0; e < nEpochs; e++) {
+        let totalLoss = 0;
+        for (const {
+            x,
+            y
+          }
+          of trainSet) {
+          const pred = forward(x);
+          for (let j = 0; j < NB; j++) {
+            const err = pred[j] - y[j]; // dL/dz for BCE+sigmoid
+            totalLoss += -(y[j] * Math.log(pred[j] + 1e-9) + (1 - y[j]) * Math.log(1 - pred[j] + 1e-9));
+            for (let i = 0; i < 26; i++) W[j][i] -= lr * err * x[i] / trainSet.length;
+            B[j] -= lr * err / trainSet.length;
+          }
+        }
+        epoch++;
+        lossHistory.push(totalLoss / trainSet.length);
+        if (lossHistory.length > 200) lossHistory.shift();
+      }
+      document.getElementById('epochCount').textContent = epoch;
+      document.getElementById('lossVal').textContent = lossHistory[lossHistory.length - 1].toFixed(3);
+      drawLoss();
+    }
+
+    function drawLoss() {
+      const cv = document.getElementById('lossCanvas');
+      const ctx = cv.getContext('2d');
+      cv.width = cv.clientWidth;
+      cv.height = 70;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      if (lossHistory.length < 2) return;
+      const max = Math.max(...lossHistory),
+        min = Math.min(...lossHistory);
+      ctx.strokeStyle = '#5fd0c0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      lossHistory.forEach((l, i) => {
+        const x = i / (lossHistory.length - 1) * cv.width;
+        const y = cv.height - ((l - min) / ((max - min) || 1)) * cv.height * 0.9 - 4;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    /* ---------- bigram model over corpus for constrained generation ---------- */
+    const bigram = {};
+    CORPUS.forEach(s => {
+      const toks = ['<s>', ...tokenize(s), '</s>'];
+      for (let i = 0; i < toks.length - 1; i++) {
+        bigram[toks[i]] = bigram[toks[i]] || {};
+        bigram[toks[i]][toks[i + 1]] = (bigram[toks[i]][toks[i + 1]] || 0) + 1;
+      }
+    });
+
+    function generateFrom(keywords) {
+      // greedy walk from <s>, biased toward hitting remaining target keywords
+      const remaining = new Set(keywords);
+      let cur = '<s>',
+        out = [],
+        guard = 0;
+      while (cur !== '</s>' && guard++ < 14) {
+        const next = bigram[cur];
+        if (!next) {
+          break;
+        }
+        const candidates = Object.keys(next);
+        // prefer a candidate that's in remaining keyword set
+        let pick = candidates.find(w => remaining.has(w));
+        if (!pick) {
+          // fallback: highest-count continuation (LCS-style graceful fallback)
+          pick = candidates.sort((a, b) => next[b] - next[a])[0];
+        }
+        remaining.delete(pick);
+        if (pick !== '</s>') out.push(pick);
+        cur = pick;
+      }
+      if (out.length === 0) return keywords.join(' ') || '(no signal)';
+      return out.join(' ');
+    }
+
+    /* ---------- UI wiring ---------- */
+    function showEmbed() {
+      const t = document.getElementById('embedInput').value;
+      const v = toyEmbed(t);
+      const host = document.getElementById('embedHist');
+      host.innerHTML = '';
+      const max = Math.max(...v, 0.01);
+      v.forEach(val => {
+        const d = document.createElement('div');
+        d.className = 'bar';
+        d.style.height = Math.max(2, (val / max) * 36) + 'px';
+        host.appendChild(d);
+      });
+      document.getElementById('embedStat').textContent = '26-d vector, a-z frequency (this fakes what a real embedder would output at 1536-d)';
+    }
+
+    function showHash() {
+      const w = document.getElementById('hashWord').value.trim().toLowerCase();
+      const b = hashWord(w);
+      if (b === -1) {
+        document.getElementById('hashOut').innerHTML =
+          `"<b style="color:var(--warn)">${w}</b>" not in vocab table (${NB} words) — no slot exists for it. this is the tradeoff: fixed table, unseen words just vanish.`;
+        renderBucketGrid(-1);
+        return;
+      }
+      document.getElementById('hashOut').innerHTML =
+        `vocab.indexOf("<b style="color:var(--accent)">${w}</b>") = <b style="color:var(--accent)">${b}</b> &nbsp;·&nbsp; 1:1, no collision possible`;
+      renderBucketGrid(b);
+    }
+
+    function renderBucketGrid(highlight) {
+      const host = document.getElementById('bucketGrid');
+      host.innerHTML = '';
+      for (let b = 0; b < NB; b++) {
+        const words = Object.keys(bucketWords[b] || {});
+        const d = document.createElement('div');
+        d.className = 'bucket' + (b === highlight ? ' hit' : '');
+        d.innerHTML = `<b>${b}</b>${words.slice(0,3).join(', ')||'·'}`;
+        host.appendChild(d);
+      }
+    }
+
+    function runDebedder() {
+      const t = document.getElementById('runInput').value;
+      const x = toyEmbed(t);
+      const pred = forward(x);
+      const ranked = pred.map((p, i) => ({
+        b: i,
+        p
+      })).sort((a, b) => b.p - a.p).slice(0, 6);
+      const kwHost = document.getElementById('kwOut');
+      kwHost.innerHTML = '';
+      const kwList = [];
+      ranked.forEach(r => {
+        const words = Object.keys(bucketWords[r.b] || {}).sort((a, b) => bucketWords[r.b][b] - bucketWords[r.b][a]);
+        const top = words[0] || `#${r.b}`;
+        if (words[0]) kwList.push(words[0]);
+        const el = document.createElement('span');
+        el.className = 'kw';
+        el.innerHTML = `${top} <span>${r.p.toFixed(2)}</span>`;
+        kwHost.appendChild(el);
+      });
+      document.getElementById('genOut').textContent = generateFrom(kwList);
+    }
+
+    /* ---------- init ---------- */
+    resetModel();
+    showEmbed();
+    showHash();
+    window.addEventListener('resize', drawLoss);
+    })();
+  </script>
+</body>
+
+</html>
