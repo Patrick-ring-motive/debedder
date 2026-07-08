@@ -79,7 +79,7 @@
 <body>
 
 <h1>debedder :: toy</h1>
-<div class="sub">local no-vectordb semantic decoder — hash-vocab linear layer + bigram constrained decode. all math client-side, no API calls.</div>
+<div class="sub">local no-vectordb semantic decoder — plain fixed-vocab linear layer + bigram constrained decode. all math client-side, no API calls.</div>
 
 <div class="layout">
 
@@ -91,18 +91,18 @@
     <div class="stat" id="embedStat"></div>
   </div>
 
-  <div class="panel" data-tag="02 · feature hashing">
-    <div class="flow">word → hash(word) % 32 → bucket index. no dictionary table. collisions shown in red count.</div>
+  <div class="panel" data-tag="02 · vocab lookup">
+    <div class="flow">word → dictionary.indexOf(word) → slot index. real table, built once from corpus. unknown words have no slot at all — that's the tradeoff vs hashing.</div>
     <input type="text" id="hashWord" value="cat" placeholder="type a word">
-    <button onclick="showHash()">hash it</button>
+    <button onclick="showHash()">look it up</button>
     <div class="out" id="hashOut" style="min-height:16px"></div>
     <div class="bucket-grid" id="bucketGrid"></div>
   </div>
 
   <div class="panel full" data-tag="03 · train the linear layer">
     <div class="flow">
-      corpus (24 toy sentences) → tf-ish top keywords per sentence → hash to buckets → multi-label targets.<br>
-      train <b>W</b> [32 buckets × 26 dims] via logistic regression / SGD, live in this tab. no embedder in the training loop — that's the whole simplification.
+      corpus (24 toy sentences) → tf-ish top keywords per sentence → vocab index → multi-label targets.<br>
+      train <b>W</b> [vocab-size × 26 dims] via logistic regression / SGD, live in this tab. no embedder in the training loop — that's the whole simplification.
     </div>
     <div class="row">
       <button onclick="trainStep(50)">train +50 epochs</button>
@@ -114,14 +114,14 @@
   </div>
 
   <div class="panel full" data-tag="04 · run the debedder">
-    <div class="flow">type any sentence (even unseen ones) → toy-embed → W → top-k buckets → unhash to candidate words → bigram model strings them into text, biased toward hitting the predicted keywords.</div>
+    <div class="flow">type any sentence (even unseen ones) → toy-embed → W → top-k vocab slots → candidate words → bigram model strings them into text, biased toward hitting the predicted keywords.</div>
     <textarea id="runInput" rows="2">a small vessel drifts through deep space</textarea>
     <button onclick="runDebedder()">decode</button>
     <label>predicted keywords (bucket → score)</label>
     <div id="kwOut"></div>
     <label>bigram-generated caption</label>
     <div class="out" id="genOut">–</div>
-    <div class="note">try sentences totally outside the toy corpus — you'll see the hash buckets and bigram model degrade gracefully to nearest-available concepts rather than failing outright. this is the LCS-fallback behavior at toy scale.</div>
+    <div class="note">try sentences totally outside the toy corpus — words not in the fixed vocab table have no slot at all (see panel 02), so out-of-vocab meaning gets dropped entirely rather than smeared into a nearby bucket. the bigram model still falls back gracefully on whatever keywords do land. this is the tradeoff for dropping the hash trick: cleaner slots, harder ceiling on coverage.</div>
   </div>
 
 </div>
@@ -169,18 +169,7 @@ function toyEmbed(text){
   return v;
 }
 
-/* ---------- feature hashing ---------- */
-const NB = 32; // bucket count, small on purpose so collisions are visible
-function hashWord(w){
-  // djb2
-  let h = 5381;
-  for(let i=0;i<w.length;i++) h = ((h*33) ^ w.charCodeAt(i)) >>> 0;
-  return h % NB;
-}
-
-/* build bucket -> word list from corpus for un-hashing at inference */
-const bucketWords = {};
-const bucketFreq = {};
+/* ---------- plain vocab lookup (no hashing) ---------- */
 function tokenize(s){ return s.toLowerCase().replace(/[^a-z\s]/g,"").split(/\s+/).filter(Boolean); }
 function keywordsOf(sentence, topN=4){
   const toks = tokenize(sentence).filter(w=>!STOP.has(w) && w.length>2);
@@ -189,14 +178,21 @@ function keywordsOf(sentence, topN=4){
   return Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,topN);
 }
 
-CORPUS.forEach(s=>{
-  keywordsOf(s, 6).forEach(w=>{
-    const b = hashWord(w);
-    bucketWords[b] = bucketWords[b] || {};
-    bucketWords[b][w] = (bucketWords[b][w]||0)+1;
-    bucketFreq[w] = (bucketFreq[w]||0)+1;
-  });
-});
+// build the vocab table once, up front, from every keyword seen in the corpus.
+// this table is the entire "database" now - ships as a flat array, size grows
+// with real vocab (no fixed bucket count, no collisions, but also no way to
+// represent a word that isn't in this list at train time).
+const vocabSet = new Set();
+CORPUS.forEach(s => keywordsOf(s, 6).forEach(w => vocabSet.add(w)));
+const vocab = Array.from(vocabSet).sort();
+const NB = vocab.length; // output width = vocab size, exactly
+const wordToIdx = {}; vocab.forEach((w,i)=> wordToIdx[w]=i );
+
+function hashWord(w){ return wordToIdx.hasOwnProperty(w) ? wordToIdx[w] : -1; }
+
+/* bucket -> word is now 1:1, trivial, no collision bookkeeping needed */
+const bucketWords = {};
+vocab.forEach((w,i)=>{ bucketWords[i] = { [w]: 1 }; });
 
 /* ---------- training data: (embedding, multi-hot label over 32 buckets) ---------- */
 const trainSet = CORPUS.map(s=>{
@@ -316,10 +312,14 @@ function showEmbed(){
 function showHash(){
   const w = document.getElementById('hashWord').value.trim().toLowerCase();
   const b = hashWord(w);
-  const others = Object.keys(bucketWords[b]||{}).filter(x=>x!==w);
+  if(b === -1){
+    document.getElementById('hashOut').innerHTML =
+      `"<b style="color:var(--warn)">${w}</b>" not in vocab table (${NB} words) — no slot exists for it. this is the tradeoff: fixed table, unseen words just vanish.`;
+    renderBucketGrid(-1);
+    return;
+  }
   document.getElementById('hashOut').innerHTML =
-    `hash("<b style="color:var(--accent)">${w}</b>") % ${NB} = <b style="color:var(--accent)">${b}</b>` +
-    (others.length ? ` &nbsp;·&nbsp; already sharing this bucket: <span style="color:var(--warn)">${others.join(', ')}</span> (collision)` : ' · empty bucket so far');
+    `vocab.indexOf("<b style="color:var(--accent)">${w}</b>") = <b style="color:var(--accent)">${b}</b> &nbsp;·&nbsp; 1:1, no collision possible`;
   renderBucketGrid(b);
 }
 
