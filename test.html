@@ -318,6 +318,7 @@
     		const res = await fetch(...args)
     		txt = res.statusText||'';
     		txt = await res.text();
+        return txt;
     	}catch(e){
     		return txt||String(e);
     	}
