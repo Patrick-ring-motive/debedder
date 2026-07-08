@@ -312,32 +312,28 @@
   <script>
     (async()=>{
     /* ---------- toy corpus: 4 loose topics, kept tiny on purpose ---------- */
-    const CORPUS = [
-      "the cat sleeps on the warm windowsill",
-      "a black cat hunts mice at night",
-      "the kitten chases a ball of yarn",
-      "cats groom themselves for hours",
-      "the dog barks at the mailman",
-      "simmer the onions in butter until soft",
-      "whisk the eggs and add a pinch of salt",
-      "bake the bread at high heat for an hour",
-      "chop the garlic finely before frying",
-      "the soup needs more pepper and thyme",
-      "boil the pasta then drain the water",
-      "a rocket launches from the desert pad",
-      "the astronaut floats outside the station",
-      "stars burn for billions of years",
-      "the probe drifts past the outer planets",
-      "a small vessel orbits the distant moon",
-      "mission control tracks the capsule descent",
-      "the function returns a promise that resolves",
-      "the worker streams the response in chunks",
-      "the array is sorted before the merge step",
-      "the server caches the embedding vector",
-      "the compiler throws an error on the missing token",
-      "the database indexes the table by primary key",
-      "the model trains on the batch of vectors"
-    ];
+    const fetchText = async (...args)=>{
+    	let txt;
+    	try{
+    		const res = await fetch(...args)
+    		txt = res.statusText||'';
+    		txt = await res.text();
+    	}catch(e){
+    		return txt||String(e);
+    	}
+    };
+    
+    const getCorpus = async(...args)=>{
+    	
+    	const txt = await fetchText(...args);
+    
+    	const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+    
+    	return [...segmenter.segment(txt.replaceAll(/\n|¬/g,''))].map(x=>x.segment.trim()).filter(Boolean);
+    
+    };
+    
+    const CORPUS = await getCorpus('https://patrick-ring-motive.github.io/tolkienizer/fellowship.txt');
     const STOP = new Set("the a an of on at in to for is are and or but with from by as that this it its into over than then more before after".split(" "));
 
     /* ---------- toy embedder: 26-d letter-frequency histogram ---------- */
