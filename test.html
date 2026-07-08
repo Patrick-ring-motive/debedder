@@ -359,7 +359,7 @@
       return s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
     }
 
-    globalThis.keywordOf = function keywordsOf(sentence, topN = 4) {
+    globalThis.keywordsOf = function keywordsOf(sentence, topN = 4) {
       const toks = tokenize(sentence).filter(w => !STOP.has(w) && w.length > 2);
       const freq = {};
       toks.forEach(w => freq[w] = (freq[w] || 0) + 1);
