@@ -310,279 +310,282 @@
   </div>
 
   <script>
-    (async()=>{
-    /* ---------- toy corpus: 4 loose topics, kept tiny on purpose ---------- */
-    const fetchText = async (...args)=>{
-    	let txt;
-    	try{
-    		const res = await fetch(...args)
-    		txt = res.statusText||'';
-    		txt = await res.text();
-        return txt;
-    	}catch(e){
-    		return txt||String(e);
-    	}
-    };
-    
-    const getCorpus = async(...args)=>{
-    	
-    	const txt = await fetchText(...args);
-    
-    	const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
-    
-    	return [...segmenter.segment(txt.replaceAll(/\n|¬/g,''))].map(x=>x.segment.trim()).filter(Boolean);
-    
-    };
-    
-    const CORPUS = await getCorpus('https://patrick-ring-motive.github.io/tolkienizer/fellowship.txt');
-    const STOP = new Set("the a an of on at in to for is are and or but with from by as that this it its into over than then more before after".split(" "));
-
-    /* ---------- toy embedder: 26-d letter-frequency histogram ---------- */
-    globalThis.toyEmbed = function toyEmbed(text) {
-      const v = new Array(26).fill(0);
-      const t = text.toLowerCase();
-      let n = 0;
-      for (const ch of t) {
-        const c = ch.charCodeAt(0) - 97;
-        if (c >= 0 && c < 26) {
-          v[c]++;
-          n++;
+    (async () => {
+      /* ---------- toy corpus: 4 loose topics, kept tiny on purpose ---------- */
+      const fetchText = async (...args) => {
+        let txt;
+        try {
+          const res = await fetch(...args)
+          txt = res.statusText || '';
+          txt = await res.text();
+          return txt;
+        } catch (e) {
+          return txt || String(e);
         }
-      }
-      if (n > 0)
-        for (let i = 0; i < 26; i++) v[i] /= n;
-      return v;
-    }
-
-    /* ---------- plain vocab lookup (no hashing) ---------- */
-    globalThis.tokenize = function tokenize(s) {
-      return s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
-    }
-
-    globalThis.keywordsOf = function keywordsOf(sentence, topN = 4) {
-      const toks = tokenize(sentence).filter(w => !STOP.has(w) && w.length > 2);
-      const freq = {};
-      toks.forEach(w => freq[w] = (freq[w] || 0) + 1);
-      return Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, topN);
-    }
-
-    // build the vocab table once, up front, from every keyword seen in the corpus.
-    // this table is the entire "database" now - ships as a flat array, size grows
-    // with real vocab (no fixed bucket count, no collisions, but also no way to
-    // represent a word that isn't in this list at train time).
-    const vocabSet = new Set();
-    CORPUS.forEach(s => keywordsOf(s, 6).forEach(w => vocabSet.add(w)));
-    const vocab = Array.from(vocabSet).sort();
-    const NB = vocab.length; // output width = vocab size, exactly
-    const wordToIdx = {};
-    vocab.forEach((w, i) => wordToIdx[w] = i);
-
-    globalThis.hashWord = function hashWord(w) {
-      return wordToIdx.hasOwnProperty(w) ? wordToIdx[w] : -1;
-    }
-
-    /* bucket -> word is now 1:1, trivial, no collision bookkeeping needed */
-    const bucketWords = {};
-    vocab.forEach((w, i) => {
-      bucketWords[i] = {
-        [w]: 1
       };
-    });
 
-    /* ---------- training data: (embedding, multi-hot label over 32 buckets) ---------- */
-    const trainSet = CORPUS.map(s => {
-      const label = new Array(NB).fill(0);
-      keywordsOf(s, 6).forEach(w => label[hashWord(w)] = 1);
-      return {
-        x: toyEmbed(s),
-        y: label
+      const getCorpus = async (...args) => {
+
+        const txt = await fetchText(...args);
+
+        const segmenter = new Intl.Segmenter("en", {
+          granularity: "sentence"
+        });
+
+        return [...segmenter.segment(txt.replaceAll(/\n|¬/g, ''))].map(x => x.segment.trim()).filter(Boolean);
+
       };
-    });
 
-    /* ---------- linear layer: W [NB x 26], b [NB] ---------- */
-    let W, B, epoch, lossHistory;
+      const CORPUS = await getCorpus('https://patrick-ring-motive.github.io/tolkienizer/fellowship.txt');
+      const STOP = new Set("the a an of on at in to for is are and or but with from by as that this it its into over than then more before after".split(" "));
 
-    globalThis.resetModel = function resetModel() {
-      W = Array.from({
-        length: NB
-      }, () => Array.from({
-        length: 26
-      }, () => (Math.random() - 0.5) * 0.2));
-      B = new Array(NB).fill(0);
-      epoch = 0;
-      lossHistory = [];
-      document.getElementById('epochCount').textContent = '0';
-      document.getElementById('lossVal').textContent = '–';
-      drawLoss();
-    }
-
-    globalThis.sigmoid = function sigmoid(z) {
-      return 1 / (1 + Math.exp(-z));
-    }
-
-    globalThis.forward = function forward(x) {
-      const out = new Array(NB);
-      for (let j = 0; j < NB; j++) {
-        let z = B[j];
-        for (let i = 0; i < 26; i++) z += W[j][i] * x[i];
-        out[j] = sigmoid(z);
-      }
-      return out;
-    }
-
-    globalThis.trainStep = function trainStep(nEpochs) {
-      const lr = 0.6;
-      for (let e = 0; e < nEpochs; e++) {
-        let totalLoss = 0;
-        for (const {
-            x,
-            y
-          }
-          of trainSet) {
-          const pred = forward(x);
-          for (let j = 0; j < NB; j++) {
-            const err = pred[j] - y[j]; // dL/dz for BCE+sigmoid
-            totalLoss += -(y[j] * Math.log(pred[j] + 1e-9) + (1 - y[j]) * Math.log(1 - pred[j] + 1e-9));
-            for (let i = 0; i < 26; i++) W[j][i] -= lr * err * x[i] / trainSet.length;
-            B[j] -= lr * err / trainSet.length;
+      /* ---------- toy embedder: 26-d letter-frequency histogram ---------- */
+      globalThis.toyEmbed = function toyEmbed(text) {
+        const v = new Array(26).fill(0);
+        const t = text.toLowerCase();
+        let n = 0;
+        for (const ch of t) {
+          const c = ch.charCodeAt(0) - 97;
+          if (c >= 0 && c < 26) {
+            v[c]++;
+            n++;
           }
         }
-        epoch++;
-        lossHistory.push(totalLoss / trainSet.length);
-        if (lossHistory.length > 200) lossHistory.shift();
+        if (n > 0)
+          for (let i = 0; i < 26; i++) v[i] /= n;
+        return v;
       }
-      document.getElementById('epochCount').textContent = epoch;
-      document.getElementById('lossVal').textContent = lossHistory[lossHistory.length - 1].toFixed(3);
-      drawLoss();
-    }
 
-    globalThis.drawLoss = function drawLoss() {
-      const cv = document.getElementById('lossCanvas');
-      const ctx = cv.getContext('2d');
-      cv.width = cv.clientWidth;
-      cv.height = 70;
-      ctx.clearRect(0, 0, cv.width, cv.height);
-      if (lossHistory.length < 2) return;
-      const max = Math.max(...lossHistory),
-        min = Math.min(...lossHistory);
-      ctx.strokeStyle = '#5fd0c0';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      lossHistory.forEach((l, i) => {
-        const x = i / (lossHistory.length - 1) * cv.width;
-        const y = cv.height - ((l - min) / ((max - min) || 1)) * cv.height * 0.9 - 4;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      /* ---------- plain vocab lookup (no hashing) ---------- */
+      globalThis.tokenize = function tokenize(s) {
+        return s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
+      }
+
+      globalThis.keywordsOf = function keywordsOf(sentence, topN = 4) {
+        const toks = tokenize(sentence).filter(w => !STOP.has(w) && w.length > 2);
+        const freq = {};
+        toks.forEach(w => freq[w] = (freq[w] || 0) + 1);
+        return Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, topN);
+      }
+
+      // build the vocab table once, up front, from every keyword seen in the corpus.
+      // this table is the entire "database" now - ships as a flat array, size grows
+      // with real vocab (no fixed bucket count, no collisions, but also no way to
+      // represent a word that isn't in this list at train time).
+      const vocabSet = new Set();
+      CORPUS.forEach(s => keywordsOf(s, 6).forEach(w => vocabSet.add(w)));
+      const vocab = Array.from(vocabSet).sort();
+      const NB = vocab.length; // output width = vocab size, exactly
+      const wordToIdx = {};
+      vocab.forEach((w, i) => wordToIdx[w] = i);
+
+      globalThis.hashWord = function hashWord(w) {
+        return wordToIdx.hasOwnProperty(w) ? wordToIdx[w] : -1;
+      }
+
+      /* bucket -> word is now 1:1, trivial, no collision bookkeeping needed */
+      const bucketWords = {};
+      vocab.forEach((w, i) => {
+        bucketWords[i] = {
+          [w]: 1
+        };
       });
-      ctx.stroke();
-    }
 
-    /* ---------- bigram model over corpus for constrained generation ---------- */
-    const bigram = {};
-    CORPUS.forEach(s => {
-      const toks = ['<s>', ...tokenize(s), '</s>'];
-      for (let i = 0; i < toks.length - 1; i++) {
-        bigram[toks[i]] = bigram[toks[i]] || {};
-        bigram[toks[i]][toks[i + 1]] = (bigram[toks[i]][toks[i + 1]] || 0) + 1;
-      }
-    });
-
-    globalThis.generateFrom = function generateFrom(keywords) {
-      // greedy walk from <s>, biased toward hitting remaining target keywords
-      const remaining = new Set(keywords);
-      let cur = '<s>',
-        out = [],
-        guard = 0;
-      while (cur !== '</s>' && guard++ < 14) {
-        const next = bigram[cur];
-        if (!next) {
-          break;
-        }
-        const candidates = Object.keys(next);
-        // prefer a candidate that's in remaining keyword set
-        let pick = candidates.find(w => remaining.has(w));
-        if (!pick) {
-          // fallback: highest-count continuation (LCS-style graceful fallback)
-          pick = candidates.sort((a, b) => next[b] - next[a])[0];
-        }
-        remaining.delete(pick);
-        if (pick !== '</s>') out.push(pick);
-        cur = pick;
-      }
-      if (out.length === 0) return keywords.join(' ') || '(no signal)';
-      return out.join(' ');
-    }
-
-    /* ---------- UI wiring ---------- */
-    globalThis.showEmbed = function showEmbed() {
-      const t = document.getElementById('embedInput').value;
-      const v = toyEmbed(t);
-      const host = document.getElementById('embedHist');
-      host.innerHTML = '';
-      const max = Math.max(...v, 0.01);
-      v.forEach(val => {
-        const d = document.createElement('div');
-        d.className = 'bar';
-        d.style.height = Math.max(2, (val / max) * 36) + 'px';
-        host.appendChild(d);
+      /* ---------- training data: (embedding, multi-hot label over 32 buckets) ---------- */
+      const trainSet = CORPUS.map(s => {
+        const label = new Array(NB).fill(0);
+        keywordsOf(s, 6).forEach(w => label[hashWord(w)] = 1);
+        return {
+          x: toyEmbed(s),
+          y: label
+        };
       });
-      document.getElementById('embedStat').textContent = '26-d vector, a-z frequency (this fakes what a real embedder would output at 1536-d)';
-    }
 
-    globalThis.showHash = function showHash() {
-      const w = document.getElementById('hashWord').value.trim().toLowerCase();
-      const b = hashWord(w);
-      if (b === -1) {
+      /* ---------- linear layer: W [NB x 26], b [NB] ---------- */
+      let W, B, epoch, lossHistory;
+
+      globalThis.resetModel = function resetModel() {
+        W = Array.from({
+          length: NB
+        }, () => Array.from({
+          length: 26
+        }, () => (Math.random() - 0.5) * 0.2));
+        B = new Array(NB).fill(0);
+        epoch = 0;
+        lossHistory = [];
+        document.getElementById('epochCount').textContent = '0';
+        document.getElementById('lossVal').textContent = '–';
+        drawLoss();
+      }
+
+      globalThis.sigmoid = function sigmoid(z) {
+        return 1 / (1 + Math.exp(-z));
+      }
+
+      globalThis.forward = function forward(x) {
+        const out = new Array(NB);
+        for (let j = 0; j < NB; j++) {
+          let z = B[j];
+          for (let i = 0; i < 26; i++) z += W[j][i] * x[i];
+          out[j] = sigmoid(z);
+        }
+        return out;
+      }
+
+      globalThis.trainStep = function trainStep(nEpochs) {
+        const lr = 0.6;
+        for (let e = 0; e < nEpochs; e++) {
+          let totalLoss = 0;
+          for (const {
+              x,
+              y
+            }
+            of trainSet) {
+            const pred = forward(x);
+            for (let j = 0; j < NB; j++) {
+              const err = pred[j] - y[j]; // dL/dz for BCE+sigmoid
+              totalLoss += -(y[j] * Math.log(pred[j] + 1e-9) + (1 - y[j]) * Math.log(1 - pred[j] + 1e-9));
+              for (let i = 0; i < 26; i++) W[j][i] -= lr * err * x[i] / trainSet.length;
+              B[j] -= lr * err / trainSet.length;
+            }
+          }
+          epoch++;
+          lossHistory.push(totalLoss / trainSet.length);
+          if (lossHistory.length > 200) lossHistory.shift();
+        }
+        document.getElementById('epochCount').textContent = epoch;
+        document.getElementById('lossVal').textContent = lossHistory[lossHistory.length - 1].toFixed(3);
+        drawLoss();
+      }
+
+      globalThis.drawLoss = function drawLoss() {
+        const cv = document.getElementById('lossCanvas');
+        const ctx = cv.getContext('2d');
+        cv.width = cv.clientWidth;
+        cv.height = 70;
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        if (lossHistory.length < 2) return;
+        const max = Math.max(...lossHistory),
+          min = Math.min(...lossHistory);
+        ctx.strokeStyle = '#5fd0c0';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        lossHistory.forEach((l, i) => {
+          const x = i / (lossHistory.length - 1) * cv.width;
+          const y = cv.height - ((l - min) / ((max - min) || 1)) * cv.height * 0.9 - 4;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      /* ---------- bigram model over corpus for constrained generation ---------- */
+      const bigram = {};
+      CORPUS.forEach(s => {
+        const toks = ['<s>', ...tokenize(s), '</s>'];
+        for (let i = 0; i < toks.length - 1; i++) {
+          bigram[toks[i]] = bigram[toks[i]] || {};
+          bigram[toks[i]][toks[i + 1]] = (bigram[toks[i]][toks[i + 1]] || 0) + 1;
+        }
+      });
+
+      globalThis.generateFrom = function generateFrom(keywords) {
+        // greedy walk from <s>, biased toward hitting remaining target keywords
+        const remaining = new Set(keywords);
+        let cur = '<s>',
+          out = [],
+          guard = 0;
+        while (cur !== '</s>' && guard++ < 14) {
+          const next = bigram[cur];
+          if (!next) {
+            break;
+          }
+          const candidates = Object.keys(next);
+          // prefer a candidate that's in remaining keyword set
+          let pick = candidates.find(w => remaining.has(w));
+          if (!pick) {
+            // fallback: highest-count continuation (LCS-style graceful fallback)
+            pick = candidates.sort((a, b) => next[b] - next[a])[0];
+          }
+          remaining.delete(pick);
+          if (pick !== '</s>') out.push(pick);
+          cur = pick;
+        }
+        if (out.length === 0) return keywords.join(' ') || '(no signal)';
+        return out.join(' ');
+      }
+
+      /* ---------- UI wiring ---------- */
+      globalThis.showEmbed = function showEmbed() {
+        const t = document.getElementById('embedInput').value;
+        const v = toyEmbed(t);
+        const host = document.getElementById('embedHist');
+        host.innerHTML = '';
+        const max = Math.max(...v, 0.01);
+        v.forEach(val => {
+          const d = document.createElement('div');
+          d.className = 'bar';
+          d.style.height = Math.max(2, (val / max) * 36) + 'px';
+          host.appendChild(d);
+        });
+        document.getElementById('embedStat').textContent = '26-d vector, a-z frequency (this fakes what a real embedder would output at 1536-d)';
+      }
+
+      globalThis.showHash = function showHash() {
+        const w = document.getElementById('hashWord').value.trim().toLowerCase();
+        const b = hashWord(w);
+        if (b === -1) {
+          document.getElementById('hashOut').innerHTML =
+            `"<b style="color:var(--warn)">${w}</b>" not in vocab table (${NB} words) — no slot exists for it. this is the tradeoff: fixed table, unseen words just vanish.`;
+          renderBucketGrid(-1);
+          return;
+        }
         document.getElementById('hashOut').innerHTML =
-          `"<b style="color:var(--warn)">${w}</b>" not in vocab table (${NB} words) — no slot exists for it. this is the tradeoff: fixed table, unseen words just vanish.`;
-        renderBucketGrid(-1);
-        return;
+          `vocab.indexOf("<b style="color:var(--accent)">${w}</b>") = <b style="color:var(--accent)">${b}</b> &nbsp;·&nbsp; 1:1, no collision possible`;
+        renderBucketGrid(b);
       }
-      document.getElementById('hashOut').innerHTML =
-        `vocab.indexOf("<b style="color:var(--accent)">${w}</b>") = <b style="color:var(--accent)">${b}</b> &nbsp;·&nbsp; 1:1, no collision possible`;
-      renderBucketGrid(b);
-    }
 
-    globalThis.renderBucketGrid = function renderBucketGrid(highlight) {
-      const host = document.getElementById('bucketGrid');
-      host.innerHTML = '';
-      for (let b = 0; b < NB; b++) {
-        const words = Object.keys(bucketWords[b] || {});
-        const d = document.createElement('div');
-        d.className = 'bucket' + (b === highlight ? ' hit' : '');
-        d.innerHTML = `<b>${b}</b>${words.slice(0,3).join(', ')||'·'}`;
-        host.appendChild(d);
+      globalThis.renderBucketGrid = function renderBucketGrid(highlight) {
+        const host = document.getElementById('bucketGrid');
+        host.innerHTML = '';
+        for (let b = 0; b < NB; b++) {
+          const words = Object.keys(bucketWords[b] || {});
+          const d = document.createElement('div');
+          d.className = 'bucket' + (b === highlight ? ' hit' : '');
+          d.innerHTML = `<b>${b}</b>${words.slice(0,3).join(', ')||'·'}`;
+          host.appendChild(d);
+        }
       }
-    }
 
-    globalThis.runDebedder = function runDebedder() {
-      const t = document.getElementById('runInput').value;
-      const x = toyEmbed(t);
-      const pred = forward(x);
-      const ranked = pred.map((p, i) => ({
-        b: i,
-        p
-      })).sort((a, b) => b.p - a.p).slice(0, 6);
-      const kwHost = document.getElementById('kwOut');
-      kwHost.innerHTML = '';
-      const kwList = [];
-      ranked.forEach(r => {
-        const words = Object.keys(bucketWords[r.b] || {}).sort((a, b) => bucketWords[r.b][b] - bucketWords[r.b][a]);
-        const top = words[0] || `#${r.b}`;
-        if (words[0]) kwList.push(words[0]);
-        const el = document.createElement('span');
-        el.className = 'kw';
-        el.innerHTML = `${top} <span>${r.p.toFixed(2)}</span>`;
-        kwHost.appendChild(el);
-      });
-      document.getElementById('genOut').textContent = generateFrom(kwList);
-    }
+      globalThis.runDebedder = function runDebedder() {
+        const t = document.getElementById('runInput').value;
+        const x = toyEmbed(t);
+        const pred = forward(x);
+        const ranked = pred.map((p, i) => ({
+          b: i,
+          p
+        })).sort((a, b) => b.p - a.p).slice(0, 6);
+        const kwHost = document.getElementById('kwOut');
+        kwHost.innerHTML = '';
+        const kwList = [];
+        ranked.forEach(r => {
+          const words = Object.keys(bucketWords[r.b] || {}).sort((a, b) => bucketWords[r.b][b] - bucketWords[r.b][a]);
+          const top = words[0] || `#${r.b}`;
+          if (words[0]) kwList.push(words[0]);
+          const el = document.createElement('span');
+          el.className = 'kw';
+          el.innerHTML = `${top} <span>${r.p.toFixed(2)}</span>`;
+          kwHost.appendChild(el);
+        });
+        document.getElementById('genOut').textContent = generateFrom(kwList);
+      }
 
-    /* ---------- init ---------- */
-    resetModel();
-    showEmbed();
-    showHash();
-    window.addEventListener('resize', drawLoss);
+      /* ---------- init ---------- */
+      resetModel();
+      showEmbed();
+      showHash();
+      window.addEventListener('resize', drawLoss);
     })();
+
   </script>
 </body>
 
